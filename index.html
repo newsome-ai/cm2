@@ -1,352 +1,67 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { UploadCloud, Image as ImageIcon, FileText, Download, Loader2, AlertCircle, RefreshCw, CheckCircle2 } from 'lucide-react';
-import imageCompression from 'https://esm.sh/browser-image-compression';
-import { PDFDocument } from 'https://esm.sh/pdf-lib';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OptiCompress - Client-Side File Compressor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Client-side PDF manipulation -->
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <!-- Client-side ZIP creation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center p-6">
 
-// Utility to format file sizes into human-readable strings
-const formatBytes = (bytes, decimals = 2) => {
-  if (!+bytes) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
-};
+  <header class="max-w-4xl w-full text-center my-8">
+    <h1 class="text-4xl font-extrabold text-indigo-400 mb-2">OptiCompress Pro</h1>
+    <p class="text-slate-400">Compress JPG, PNG, JPEG, and PDF files directly in your browser. 100% Private & Free.</p>
+  </header>
 
-export default function App() {
-  const [file, setFile] = useState(null);
-  const [filePreview, setFilePreview] = useState(null);
-  const [compressionPercent, setCompressionPercent] = useState(50);
-  const [isCompressing, setIsCompressing] = useState(false);
-  const [compressedFile, setCompressedFile] = useState(null);
-  const [compressedUrl, setCompressedUrl] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [error, setError] = useState(null);
-  const fileInputRef = useRef(null);
-
-  // Cleanup object URLs to avoid memory leaks
-  useEffect(() => {
-    return () => {
-      if (filePreview) URL.revokeObjectURL(filePreview);
-      if (compressedUrl) URL.revokeObjectURL(compressedUrl);
-    };
-  }, [filePreview, compressedUrl]);
-
-  const handleFileSelect = (selectedFile) => {
-    setError(null);
-    if (!selectedFile) return;
-
-    const validTypes = ['image/jpeg', 'image/png', 'application/pdf'];
-    if (!validTypes.includes(selectedFile.type)) {
-      setError('Invalid file type. Please upload a JPG, PNG, or PDF file.');
-      return;
-    }
-
-    setFile(selectedFile);
-    setCompressedFile(null);
-    if (compressedUrl) URL.revokeObjectURL(compressedUrl);
-    setCompressedUrl(null);
-
-    // Generate preview for images
-    if (selectedFile.type.startsWith('image/')) {
-      if (filePreview) URL.revokeObjectURL(filePreview);
-      setFilePreview(URL.createObjectURL(selectedFile));
-    } else {
-      setFilePreview(null);
-    }
-  };
-
-  const onDragOver = useCallback((e) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const onDragLeave = useCallback((e) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
-
-  const onDrop = useCallback((e) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const droppedFile = e.dataTransfer.files[0];
-    handleFileSelect(droppedFile);
-  }, []);
-
-  const handleCompress = async () => {
-    if (!file) return;
+  <main class="max-w-4xl w-full bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl space-y-6">
     
-    setIsCompressing(true);
-    setError(null);
-    
-    try {
-      let finalBlob;
-      
-      if (file.type.startsWith('image/')) {
-        // Image Compression Logic
-        // Map 10-90% compression slider to a quality multiplier. 
-        // Example: 90% compression = 10% quality (0.1). 10% compression = 90% quality (0.9)
-        const initialQuality = 1 - (compressionPercent / 100);
-        
-        const options = {
-          maxSizeMB: Infinity, // Relying purely on quality degradation as requested
-          useWebWorker: true,
-          initialQuality: initialQuality,
-          alwaysKeepResolution: true // Try to maintain dimensions, focus on reducing quality overhead
-        };
-        
-        finalBlob = await imageCompression(file, options);
-      } else if (file.type === 'application/pdf') {
-        // PDF Compression Logic (Structural optimization)
-        const arrayBuffer = await file.arrayBuffer();
-        const pdfDoc = await PDFDocument.load(arrayBuffer);
-        const pdfBytes = await pdfDoc.save();
-        
-        finalBlob = new Blob([pdfBytes], { type: 'application/pdf' });
-      }
-
-      // Preserve the original file name in the downloaded blob
-      const compressedFileName = file.name.replace(/\.[^/.]+$/, "") + "_compressed" + file.name.substring(file.name.lastIndexOf('.'));
-      const newFile = new File([finalBlob], compressedFileName, { type: file.type });
-      
-      setCompressedFile(newFile);
-      setCompressedUrl(URL.createObjectURL(newFile));
-    } catch (err) {
-      console.error(err);
-      setError('An error occurred during compression. Please try again.');
-    } finally {
-      setIsCompressing(false);
-    }
-  };
-
-  const handleReset = () => {
-    setFile(null);
-    setFilePreview(null);
-    setCompressedFile(null);
-    setCompressedUrl(null);
-    setCompressionPercent(50);
-    setError(null);
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 sm:p-6 lg:p-8 font-sans text-slate-900">
-      <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
-        
-        {/* Header */}
-        <div className="px-8 py-6 bg-white border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-sm">
-              <RefreshCw className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-800">Smart File Compressor</h1>
-              <p className="text-sm text-slate-500">Client-side optimization for Images & PDFs</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-8">
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 text-red-700 rounded-xl flex items-center gap-3 border border-red-100">
-              <AlertCircle className="w-5 h-5 shrink-0" />
-              <span className="text-sm font-medium">{error}</span>
-            </div>
-          )}
-
-          {}
-          {!file && (
-            <div
-              className={`border-2 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center transition-all duration-200 cursor-pointer
-                ${isDragging 
-                  ? 'border-blue-500 bg-blue-50/50 scale-[1.01]' 
-                  : 'border-slate-200 bg-slate-50 hover:bg-slate-100/50 hover:border-slate-300'
-                }`}
-              onDragOver={onDragOver}
-              onDragLeave={onDragLeave}
-              onDrop={onDrop}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <div className="bg-white p-4 rounded-full shadow-sm border border-slate-100 mb-4">
-                <UploadCloud className="w-8 h-8 text-blue-600" />
-              </div>
-              <h3 className="text-lg font-semibold text-slate-700 mb-2">Drag & drop your file here</h3>
-              <p className="text-slate-500 text-sm text-center max-w-sm mb-6">
-                Supports JPG, PNG, and PDF files. Processed entirely securely in your browser.
-              </p>
-              <button className="px-6 py-2.5 bg-white border border-slate-200 text-slate-700 font-medium rounded-full shadow-sm hover:bg-slate-50 hover:border-slate-300 transition-colors">
-                Browse Files
-              </button>
-              <input
-                type="file"
-                ref={fileInputRef}
-                className="hidden"
-                accept="image/jpeg, image/png, application/pdf"
-                onChange={(e) => handleFileSelect(e.target.files[0])}
-              />
-            </div>
-          )}
-
-          {}
-          {file && !compressedFile && (
-            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              
-              {/* File Info Card */}
-              <div className="flex flex-col sm:flex-row gap-6 p-4 rounded-2xl border border-slate-100 bg-slate-50/50">
-                <div className="w-full sm:w-32 h-32 shrink-0 bg-white rounded-xl border border-slate-200 overflow-hidden flex items-center justify-center shadow-sm">
-                  {filePreview ? (
-                    <img src={filePreview} alt="Preview" className="w-full h-full object-cover" />
-                  ) : (
-                    <FileText className="w-12 h-12 text-slate-300" />
-                  )}
-                </div>
-                
-                <div className="flex flex-col justify-center flex-1 min-w-0">
-                  <h3 className="text-lg font-semibold text-slate-800 truncate" title={file.name}>
-                    {file.name}
-                  </h3>
-                  <div className="flex items-center gap-4 mt-2 text-sm text-slate-500">
-                    <span className="flex items-center gap-1.5 font-medium bg-white px-2.5 py-1 rounded-md border border-slate-200 shadow-sm">
-                      {file.type.startsWith('image/') ? <ImageIcon className="w-4 h-4 text-blue-500" /> : <FileText className="w-4 h-4 text-rose-500" />}
-                      {formatBytes(file.size)}
-                    </span>
-                  </div>
-                  
-                  <button 
-                    onClick={handleReset}
-                    className="text-sm text-red-600 hover:text-red-700 font-medium mt-4 w-fit underline underline-offset-4 opacity-80 hover:opacity-100 transition-opacity"
-                  >
-                    Remove file
-                  </button>
-                </div>
-              </div>
-
-              {}
-              {/* Compression Slider */}
-              <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
-                <div className="flex justify-between items-center mb-6">
-                  <label htmlFor="compression" className="font-semibold text-slate-800">
-                    Compression Level
-                  </label>
-                  <span className="px-3 py-1 bg-blue-50 text-blue-700 font-bold rounded-lg border border-blue-100">
-                    {compressionPercent}%
-                  </span>
-                </div>
-                
-                <div className="relative pt-1">
-                  <input
-                    id="compression"
-                    type="range"
-                    min="10"
-                    max="90"
-                    step="1"
-                    value={compressionPercent}
-                    onChange={(e) => setCompressionPercent(parseInt(e.target.value))}
-                    className="w-full h-2.5 bg-slate-200 rounded-full appearance-none cursor-pointer accent-blue-600 outline-none focus:ring-4 focus:ring-blue-600/20"
-                    disabled={isCompressing}
-                  />
-                  <div className="flex justify-between text-xs font-medium text-slate-400 mt-3">
-                    <span>10% (High Quality)</span>
-                    <span>90% (Small Size)</span>
-                  </div>
-                </div>
-
-                {file.type === 'application/pdf' && (
-                  <div className="mt-5 p-3.5 bg-amber-50 rounded-xl flex gap-3 border border-amber-100">
-                    <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
-                    <p className="text-sm text-amber-800 leading-relaxed">
-                      <strong>Note:</strong> Client-side PDF compression is limited to structural optimization and metadata removal. The slider will not heavily affect visual quality for PDFs.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {}
-              <button
-                onClick={handleCompress}
-                disabled={isCompressing}
-                className="w-full py-4 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl font-semibold shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98] flex items-center justify-center gap-3 text-lg"
-              >
-                {isCompressing ? (
-                  <>
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                    Compressing...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="w-5 h-5" />
-                    Compress File
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-
-          {}
-          {compressedFile && (
-            <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
-              
-              <div className="bg-emerald-50 border border-emerald-100 p-8 rounded-2xl flex flex-col items-center text-center">
-                <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-4 border border-emerald-200 shadow-sm">
-                  <CheckCircle2 className="w-8 h-8 text-emerald-600" />
-                </div>
-                <h2 className="text-2xl font-bold text-emerald-900 mb-2">Compression Complete!</h2>
-                
-                {/* Stats */}
-                <div className="flex flex-wrap justify-center gap-4 mt-6 w-full max-w-md">
-                  <div className="bg-white px-5 py-4 rounded-xl border border-emerald-100 shadow-sm flex-1">
-                    <div className="text-sm text-slate-500 font-medium mb-1">Original Size</div>
-                    <div className="text-lg font-semibold text-slate-800 line-through decoration-slate-300">
-                      {formatBytes(file.size)}
-                    </div>
-                  </div>
-                  <div className="bg-white px-5 py-4 rounded-xl border border-emerald-100 shadow-sm flex-1">
-                    <div className="text-sm text-emerald-600 font-medium mb-1">New Size</div>
-                    <div className="text-xl font-bold text-emerald-700">
-                      {formatBytes(compressedFile.size)}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Percentage Savings Logic */}
-                {(() => {
-                  const percentSaved = ((file.size - compressedFile.size) / file.size) * 100;
-                  if (percentSaved > 0) {
-                    return (
-                      <div className="mt-6 inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-1.5 rounded-full text-sm font-semibold shadow-sm">
-                        Saved {percentSaved.toFixed(1)}%
-                      </div>
-                    );
-                  } else {
-                    return (
-                      <div className="mt-6 bg-amber-100 text-amber-800 px-4 py-3 rounded-xl text-sm font-medium border border-amber-200">
-                        The compressed file is slightly larger or identical. This can happen with already optimized files or specific PDF structures.
-                      </div>
-                    );
-                  }
-                })()}
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-4 pt-4">
-                <a
-                  href={compressedUrl}
-                  download={compressedFile.name}
-                  className="flex-1 py-4 px-6 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-semibold shadow-lg shadow-slate-900/20 transition-all active:scale-[0.98] flex items-center justify-center gap-3 text-lg"
-                >
-                  <Download className="w-5 h-5" />
-                  Download Compressed File
-                </a>
-                <button
-                  onClick={handleReset}
-                  className="py-4 px-6 bg-white border-2 border-slate-200 hover:bg-slate-50 hover:border-slate-300 text-slate-700 rounded-xl font-semibold transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                >
-                  Process Another
-                </button>
-              </div>
-
-            </div>
-          )}
-        </div>
+    <!-- Compression Level Slider -->
+    <div class="bg-slate-900 p-5 rounded-xl border border-slate-700">
+      <div class="flex justify-between items-center mb-2">
+        <label for="compressionSlider" class="font-semibold text-slate-200">
+          Target Compression Ratio: <span id="percentLabel" class="text-indigo-400 font-bold">50%</span>
+        </label>
+        <span class="text-xs text-slate-400">Higher % = Smaller file size</span>
+      </div>
+      <input type="range" id="compressionSlider" min="10" max="90" value="50" step="5"
+        class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+      <div class="flex justify-between text-xs text-slate-500 mt-1">
+        <span>10% (Maximum Quality)</span>
+        <span>50% (Balanced)</span>
+        <span>90% (Maximum Compression)</span>
       </div>
     </div>
-  );
-}
+
+    <!-- Drop Zone -->
+    <div id="dropZone" 
+      class="border-2 border-dashed border-indigo-500/50 hover:border-indigo-400 bg-slate-900/50 hover:bg-slate-900 transition-all rounded-xl p-8 text-center cursor-pointer flex flex-col items-center justify-center space-y-3">
+      <svg class="w-12 h-12 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+      </svg>
+      <p class="text-slate-300 font-medium">Drag & Drop files here or <span class="text-indigo-400 underline">Browse</span></p>
+      <p class="text-xs text-slate-500">Supports JPG, PNG, JPEG, and PDF</p>
+      <input type="file" id="fileInput" multiple accept=".jpg,.jpeg,.png,.pdf" class="hidden">
+    </div>
+
+    <!-- Action Bar -->
+    <div class="flex justify-between items-center pt-2">
+      <button id="compressBtn" disabled 
+        class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold px-6 py-2.5 rounded-lg transition-all">
+        Compress Files
+      </button>
+      <button id="downloadZipBtn" class="hidden bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-6 py-2.5 rounded-lg transition-all">
+        Download All as ZIP
+      </button>
+    </div>
+
+    <!-- Output List -->
+    <div id="fileList" class="space-y-3 mt-4"></div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
