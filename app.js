@@ -1,18 +1,9 @@
-let selectedFiles = [];
-let processedFiles = [];
-
 const fileInput = document.getElementById('fileInput');
 const dropZone = document.getElementById('dropZone');
-const slider = document.getElementById('compressionSlider');
-const percentLabel = document.getElementById('percentLabel');
-const compressBtn = document.getElementById('compressBtn');
 const downloadZipBtn = document.getElementById('downloadZipBtn');
 const fileList = document.getElementById('fileList');
 
-// Update slider visual indicator
-slider.addEventListener('input', (e) => {
-  percentLabel.textContent = `${e.target.value}%`;
-});
+let filesData = [];
 
 // Drag & Drop handlers
 dropZone.addEventListener('click', () => fileInput.click());
@@ -31,17 +22,6 @@ dropZone.addEventListener('drop', (e) => {
 
 fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
-function handleFiles(files) {
-  selectedFiles = Array.from(files).filter(file => 
-    ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'].includes(file.type)
-  );
-  
-  if (selectedFiles.length > 0) {
-    compressBtn.disabled = false;
-    renderInitialFileList();
-  }
-}
-
 function formatBytes(bytes) {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
@@ -50,76 +30,114 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-function renderInitialFileList() {
-  fileList.innerHTML = '';
-  selectedFiles.forEach((file, index) => {
-    const card = document.createElement('div');
-    card.className = "bg-slate-900/80 p-4 rounded-lg flex justify-between items-center border border-slate-700/50";
-    card.id = `file-card-${index}`;
-    card.innerHTML = `
+function handleFiles(files) {
+  const validFiles = Array.from(files).filter(file => 
+    ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'].includes(file.type)
+  );
+  
+  validFiles.forEach(file => {
+    const fileId = 'file_' + Math.random().toString(36).substr(2, 9);
+    const fileObj = {
+      id: fileId,
+      originalFile: file,
+      compressedBlob: null,
+      targetPercent: 50 // default compression
+    };
+    filesData.push(fileObj);
+    createFileCard(fileObj);
+    processFile(fileId); // Auto-compress on load
+  });
+
+  if (filesData.length > 0) {
+    downloadZipBtn.classList.remove('hidden');
+  }
+}
+
+function createFileCard(fileObj) {
+  const card = document.createElement('div');
+  card.id = `card-${fileObj.id}`;
+  card.className = "bg-slate-900/80 p-5 rounded-xl border border-slate-700/50 flex flex-col space-y-4";
+  
+  card.innerHTML = `
+    <div class="flex justify-between items-start">
       <div>
-        <p class="font-medium text-slate-200">${file.name}</p>
-        <p class="text-xs text-slate-400">Original Size: ${formatBytes(file.size)}</p>
+        <p class="font-medium text-slate-200 truncate w-64 md:w-96" title="${fileObj.originalFile.name}">${fileObj.originalFile.name}</p>
+        <p class="text-xs text-slate-400 mt-1">
+          Original: ${formatBytes(fileObj.originalFile.size)} 
+          &rarr; <span id="size-${fileObj.id}" class="text-emerald-400 font-bold ml-1">Processing...</span>
+        </p>
       </div>
-      <span class="text-xs text-amber-400 font-semibold" id="status-${index}">Ready</span>
-    `;
-    fileList.appendChild(card);
+      <a id="download-${fileObj.id}" class="hidden bg-slate-800 hover:bg-slate-700 text-xs text-indigo-300 border border-indigo-500/30 font-medium px-4 py-2 rounded transition-all cursor-pointer">
+        Download
+      </a>
+    </div>
+    
+    <div class="bg-slate-900 p-3 rounded-lg border border-slate-700/50">
+      <div class="flex justify-between items-center mb-2">
+        <label class="text-xs font-semibold text-slate-300">
+          Target Compression: <span id="label-${fileObj.id}" class="text-indigo-400 font-bold">${fileObj.targetPercent}%</span>
+        </label>
+        <span id="status-${fileObj.id}" class="text-[10px] text-amber-400 font-semibold uppercase tracking-wider">Compressing...</span>
+      </div>
+      <input type="range" id="slider-${fileObj.id}" min="10" max="90" value="${fileObj.targetPercent}" step="5"
+        class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+    </div>
+  `;
+  
+  fileList.prepend(card);
+
+  const slider = document.getElementById(`slider-${fileObj.id}`);
+  const label = document.getElementById(`label-${fileObj.id}`);
+  const status = document.getElementById(`status-${fileObj.id}`);
+
+  // Update text while dragging
+  slider.addEventListener('input', (e) => {
+    label.textContent = `${e.target.value}%`;
+  });
+
+  // Trigger compression only when dragging stops (change event)
+  slider.addEventListener('change', (e) => {
+    status.textContent = "Re-compressing...";
+    status.className = "text-[10px] text-amber-400 font-semibold uppercase tracking-wider animate-pulse";
+    fileObj.targetPercent = parseInt(e.target.value);
+    processFile(fileObj.id);
   });
 }
 
-compressBtn.addEventListener('click', async () => {
-  compressBtn.disabled = true;
-  processedFiles = [];
-  const targetPercent = parseInt(slider.value);
-  // Quality is inverse of compression target percentage
-  const quality = (100 - targetPercent) / 100;
+async function processFile(fileId) {
+  const fileObj = filesData.find(f => f.id === fileId);
+  if (!fileObj) return;
 
-  for (let i = 0; i < selectedFiles.length; i++) {
-    const file = selectedFiles[i];
-    const statusElem = document.getElementById(`status-${i}`);
-    statusElem.textContent = "Compressing...";
-    statusElem.className = "text-xs text-indigo-400 font-semibold animate-pulse";
+  const { originalFile, targetPercent } = fileObj;
+  let compressedBlob;
 
-    let compressedBlob;
-    if (file.type.startsWith('image/')) {
-      compressedBlob = await compressImage(file, quality, targetPercent);
-    } else if (file.type === 'application/pdf') {
-      compressedBlob = await compressPDF(file, quality);
-    }
-
-    processedFiles.push({
-      name: `compressed_${file.name}`,
-      blob: compressedBlob
-    });
-
-    // Update Card UI with results
-    const originalSize = file.size;
-    const newSize = compressedBlob.size;
-    const savedPercent = (((originalSize - newSize) / originalSize) * 100).toFixed(1);
-
-    const card = document.getElementById(`file-card-${i}`);
-    card.innerHTML = `
-      <div>
-        <p class="font-medium text-slate-200">${file.name}</p>
-        <p class="text-xs text-slate-400">
-          ${formatBytes(originalSize)} &rarr; <span class="text-emerald-400 font-bold">${formatBytes(newSize)}</span>
-          <span class="ml-2 text-indigo-400">(${savedPercent}% smaller)</span>
-        </p>
-      </div>
-      <a href="${URL.createObjectURL(compressedBlob)}" download="compressed_${file.name}" 
-         class="bg-slate-800 hover:bg-slate-700 text-xs text-indigo-300 border border-indigo-500/30 font-medium px-3 py-1.5 rounded transition-all">
-        Download
-      </a>
-    `;
+  if (originalFile.type.startsWith('image/')) {
+    compressedBlob = await compressImage(originalFile, targetPercent);
+  } else if (originalFile.type === 'application/pdf') {
+    compressedBlob = await compressPDF(originalFile, targetPercent);
   }
 
-  if (processedFiles.length > 1) {
-    downloadZipBtn.classList.remove('hidden');
-  }
-});
+  fileObj.compressedBlob = compressedBlob;
 
-// Image compression engine using Canvas
-function compressImage(file, quality, targetPercent) {
+  // Update UI with new sizes
+  const sizeElem = document.getElementById(`size-${fileObj.id}`);
+  const statusElem = document.getElementById(`status-${fileObj.id}`);
+  const downloadBtn = document.getElementById(`download-${fileObj.id}`);
+
+  const originalSize = originalFile.size;
+  const newSize = compressedBlob.size;
+  const savedPercent = (((originalSize - newSize) / originalSize) * 100).toFixed(1);
+
+  sizeElem.innerHTML = `${formatBytes(newSize)} <span class="text-indigo-400 ml-1 font-normal">(${savedPercent}% smaller)</span>`;
+  statusElem.textContent = "Done";
+  statusElem.className = "text-[10px] text-emerald-400 font-semibold uppercase tracking-wider";
+
+  downloadBtn.href = URL.createObjectURL(compressedBlob);
+  downloadBtn.download = `compressed_${originalFile.name}`;
+  downloadBtn.classList.remove('hidden');
+}
+
+function compressImage(file, targetPercent) {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -128,39 +146,58 @@ function compressImage(file, quality, targetPercent) {
       img.src = event.target.result;
       img.onload = () => {
         const canvas = document.createElement('canvas');
+        
+        // Quality logic for JPEGs
+        const quality = (100 - targetPercent) / 100;
+        
         let width = img.width;
         let height = img.height;
 
-        // Downscale dimensions slightly if target reduction is aggressive (> 50%)
-        if (targetPercent > 50) {
-          const scaleFactor = 1 - ((targetPercent - 50) / 100);
-          width *= scaleFactor;
-          height *= scaleFactor;
+        // PNG Fix: Canvas 'image/png' export ignores quality parameter.
+        // To compress PNGs while preserving transparency (no black background), 
+        // we scale down the dimensions based on the slider.
+        let scaleFactor = 1;
+        if (file.type === 'image/png') {
+          // Max 60% resolution scale down for aggressive PNG compression
+          scaleFactor = 1 - ((targetPercent / 100) * 0.6); 
+        } else {
+          // For JPEGs, scale dimensions only if compression is > 50%
+          if (targetPercent > 50) {
+            scaleFactor = 1 - ((targetPercent - 50) / 100);
+          }
         }
+
+        width *= scaleFactor;
+        height *= scaleFactor;
 
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Ensure JPEG doesn't inherit a transparent background turning black by accident
+        if (file.type === 'image/jpeg') {
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, width, height);
+        }
 
-        // Convert canvas to blob with specified quality settings
-        const outputType = file.type === 'image/png' && targetPercent > 30 ? 'image/jpeg' : file.type;
+        // Draw image keeping original format (preserves PNG transparency)
+        ctx.drawImage(img, 0, 0, width, height);
+        
         canvas.toBlob((blob) => {
           resolve(blob || file);
-        }, outputType, quality);
+        }, file.type, quality);
       };
     };
   });
 }
 
-// PDF compression engine using PDF-Lib
-async function compressPDF(file, quality) {
+async function compressPDF(file, targetPercent) {
   try {
     const arrayBuffer = await file.arrayBuffer();
-    // Load document and optimize object streams
     const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
     
-    // Save PDF with object stream compression and metadata cleanup
+    // PDF-Lib does not natively support rasterized image downscaling.
+    // It optimizes structure. We toggle useObjectStreams to heavily compress PDF architecture.
     const pdfBytes = await pdfDoc.save({
       useObjectStreams: true,
       addDefaultPage: false,
@@ -168,22 +205,30 @@ async function compressPDF(file, quality) {
     
     return new Blob([pdfBytes], { type: 'application/pdf' });
   } catch (err) {
-    console.error("PDF compression fallback:", err);
-    return file; // Return original if parsing encounters protected structures
+    return file; 
   }
 }
 
-// Download All as ZIP using JSZip
 downloadZipBtn.addEventListener('click', () => {
   const zip = new JSZip();
-  processedFiles.forEach(file => {
-    zip.file(file.name, file.blob);
+  let hasFiles = false;
+
+  filesData.forEach(fileObj => {
+    if (fileObj.compressedBlob) {
+      zip.file(`compressed_${fileObj.originalFile.name}`, fileObj.compressedBlob);
+      hasFiles = true;
+    }
   });
+  
+  if (!hasFiles) return;
+
+  downloadZipBtn.textContent = "Zipping...";
   
   zip.generateAsync({ type: 'blob' }).then((content) => {
     const link = document.createElement('a');
     link.href = URL.createObjectURL(content);
     link.download = "compressed_files.zip";
     link.click();
+    downloadZipBtn.textContent = "Download All as ZIP";
   });
 });
